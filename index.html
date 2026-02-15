@@ -125,6 +125,7 @@
 
         <div class="results-section" id="results-container" style="display: none;">
             <div id="table-wrapper"></div>
+            <div id="pagination-wrapper" style="margin-top: 15px; display: flex; justify-content: center; gap: 10px;"></div>
         </div>
     </div>
 
@@ -173,6 +174,11 @@
         // Formateador estándar para tooltips
         const clpFormatter = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 });
 
+        let allTableData = [];
+        let currentPage = 1;
+        const itemsPerPage = 15;
+        let currentCurrency = 'UF'; 
+
         function createChart(ctx, title, labels, datasets, yAxisTitle) {
             return new Chart(ctx, {
                 type: 'line',
@@ -192,8 +198,89 @@
             });
         }
 
+        function renderTable(page) {
+            currentPage = page;
+            const start = (page - 1) * itemsPerPage;
+            const end = start + itemsPerPage;
+            const pageData = allTableData.slice(start, end);
+            const tableWrapper = document.getElementById('table-wrapper');
+            
+            const formatCLP = (val) => '$' + Math.round(val).toLocaleString('es-CL');
+            const formatOrig = (val) => currentCurrency === 'UF' ? val.toLocaleString('es-CL') + ' UF' : formatCLP(val);
+
+            let tableHtml = `<table><thead><tr>
+                <th>Monto Solicitado</th><th>Plazo</th><th>Tasa Anual</th>
+                <th style="color:var(--dividend-color);">Dividendo Mensual (CLP)</th>
+                <th>Total Pagado (CLP)</th><th class="highlight-interest">Interés Pagado (CLP)</th>
+            </tr></thead><tbody>`;
+            
+            pageData.forEach(row => {
+                tableHtml += `<tr>
+                    <td><strong>${formatOrig(row.amount)}</strong></td><td>${row.year} años</td><td>${row.rate.toFixed(2)}%</td>
+                    <td><strong>${formatCLP(row.monthlyPaymentCLP)}</strong></td><td>${formatCLP(row.totalPaymentCLP)}</td>
+                    <td class="highlight-interest">${formatCLP(row.totalInterestCLP)}</td>
+                </tr>`;
+            });
+            
+            tableHtml += `</tbody></table>`;
+            tableWrapper.innerHTML = tableHtml;
+            renderPagination();
+        }
+
+        function renderPagination() {
+            const totalPages = Math.ceil(allTableData.length / itemsPerPage);
+            const paginationWrapper = document.getElementById('pagination-wrapper');
+            if (totalPages <= 1) {
+                paginationWrapper.innerHTML = '';
+                return;
+            }
+            
+            let paginationHtml = '';
+            
+            // Botón Anterior
+            paginationHtml += `<button onclick="renderTable(${currentPage - 1})" 
+                style="width: auto; padding: 8px 15px; margin: 0; ${currentPage === 1 ? 'opacity: 0.5; pointer-events: none;' : ''}">
+                &laquo; Anterior
+            </button>`;
+
+            // Lógica simple de paginación (mostrar máximo 5 botones si hay muchos)
+            let startPage = Math.max(1, currentPage - 2);
+            let endPage = Math.min(totalPages, startPage + 4);
+            
+            if (endPage - startPage < 4) {
+                startPage = Math.max(1, endPage - 4);
+            }
+
+            if (startPage > 1) {
+                 paginationHtml += `<button onclick="renderTable(1)" style="width: auto; padding: 8px 15px; margin: 0; background-color: #95a5a6;">1</button>`;
+                 if (startPage > 2) paginationHtml += `<span style="align-self:center;">...</span>`;
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                const isActive = i === currentPage;
+                const style = isActive ? 'background-color: var(--primary-color);' : 'background-color: #95a5a6;';
+                paginationHtml += `<button onclick="renderTable(${i})" 
+                    style="width: auto; padding: 8px 15px; margin: 0; ${style}">
+                    ${i}
+                </button>`;
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) paginationHtml += `<span style="align-self:center;">...</span>`;
+                paginationHtml += `<button onclick="renderTable(${totalPages})" style="width: auto; padding: 8px 15px; margin: 0; background-color: #95a5a6;">${totalPages}</button>`;
+            }
+
+            // Botón Siguiente
+            paginationHtml += `<button onclick="renderTable(${currentPage + 1})" 
+                style="width: auto; padding: 8px 15px; margin: 0; ${currentPage === totalPages ? 'opacity: 0.5; pointer-events: none;' : ''}">
+                Siguiente &raquo;
+            </button>`;
+
+            paginationWrapper.innerHTML = paginationHtml;
+        }
+
         function calculateMortgage() {
-            const currency = document.getElementById('currency').value;
+            currentCurrency = document.getElementById('currency').value;
             const ufValue = parseFloat(document.getElementById('uf-manual').value);
             const amounts = parseRanges(document.getElementById('amounts').value);
             const years = parseRanges(document.getElementById('years').value);
@@ -210,6 +297,7 @@
             chartsContainer.innerHTML = "";
             window.chartInstances.forEach(c => c.destroy());
             window.chartInstances = [];
+            allTableData = []; // Reset global data
 
             if (isNaN(ufValue) || ufValue <= 0 || amounts.length === 0 || years.length === 0 || rates.length === 0) {
                 errorMsg.innerHTML = "Por favor, ingresa valores válidos en todos los campos.";
@@ -221,18 +309,13 @@
                 return;
             }
 
-            const formatCLP = (val) => '$' + Math.round(val).toLocaleString('es-CL');
-            const formatOrig = (val) => currency === 'UF' ? val.toLocaleString('es-CL') + ' UF' : formatCLP(val);
-
-            let tableHtml = `<table><thead><tr>
-                <th>Monto Solicitado</th><th>Plazo</th><th>Tasa Anual</th>
-                <th style="color:var(--dividend-color);">Dividendo Mensual (CLP)</th>
-                <th>Total Pagado (CLP)</th><th class="highlight-interest">Interés Pagado (CLP)</th>
-            </tr></thead><tbody>`;
+            // Formateador solo para gráficos aquí, la tabla se formatea al renderizar
+            const formatCLP_chart = (val) => '$' + Math.round(val).toLocaleString('es-CL');
+            const formatOrig_chart = (val) => currentCurrency === 'UF' ? val.toLocaleString('es-CL') + ' UF' : formatCLP_chart(val);
 
             // Procesar datos y construir UI por cada Monto
             amounts.forEach((amount, amountIndex) => {
-                let principalCLP = (currency === 'UF') ? (amount * ufValue) : amount;
+                let principalCLP = (currentCurrency === 'UF') ? (amount * ufValue) : amount;
                 
                 // Estructuras para los gráficos de este Monto
                 const chartLabels = years.map(y => `${y} años`);
@@ -251,18 +334,21 @@
                         let monthlyPaymentCalc = (monthlyRate === 0) ? (amount / totalMonths) : 
                             (amount * (monthlyRate * Math.pow(1 + monthlyRate, totalMonths)) / (Math.pow(1 + monthlyRate, totalMonths) - 1));
                         
-                        let monthlyPaymentCLP = (currency === 'UF') ? (monthlyPaymentCalc * ufValue) : monthlyPaymentCalc;
+                        let monthlyPaymentCLP = (currentCurrency === 'UF') ? (monthlyPaymentCalc * ufValue) : monthlyPaymentCalc;
                         let totalInterestCLP = (monthlyPaymentCLP * totalMonths) - principalCLP;
 
                         dividendosData.push(monthlyPaymentCLP);
                         interesesData.push(totalInterestCLP);
 
-                        // Agregar a la tabla general
-                        tableHtml += `<tr>
-                            <td><strong>${formatOrig(amount)}</strong></td><td>${year} años</td><td>${annualRate.toFixed(2)}%</td>
-                            <td><strong>${formatCLP(monthlyPaymentCLP)}</strong></td><td>${formatCLP(monthlyPaymentCLP * totalMonths)}</td>
-                            <td class="highlight-interest">${formatCLP(totalInterestCLP)}</td>
-                        </tr>`;
+                        // Agregar datos al array global en lugar de construir el HTML de la tabla directamente
+                        allTableData.push({
+                            amount: amount,
+                            year: year,
+                            rate: annualRate,
+                            monthlyPaymentCLP: monthlyPaymentCLP,
+                            totalPaymentCLP: monthlyPaymentCLP * totalMonths,
+                            totalInterestCLP: totalInterestCLP
+                        });
                     });
 
                     datasetsDividendos.push({
@@ -280,7 +366,7 @@
                 const amountSectionId = `amount-sec-${amountIndex}`;
                 chartsContainer.insertAdjacentHTML('beforeend', `
                     <div class="amount-section">
-                        <h2 class="amount-title">Análisis para ${formatOrig(amount)}</h2>
+                        <h2 class="amount-title">Análisis para ${formatOrig_chart(amount)}</h2>
                         <div class="charts-grid">
                             <div class="chart-box"><canvas id="chart-div-${amountIndex}"></canvas></div>
                             <div class="chart-box"><canvas id="chart-int-${amountIndex}"></canvas></div>
@@ -296,8 +382,8 @@
                 window.chartInstances.push(createChart(ctxInt, 'Evolución del Interés Total Pagado', chartLabels, datasetsIntereses, 'Interés Acumulado (CLP)'));
             });
 
-            tableHtml += `</tbody></table>`;
-            tableWrapper.innerHTML = tableHtml;
+            // Reemplazamos la construcción directa de la tabla por la llamada a renderTable
+            renderTable(1);
             resultsContainer.style.display = "block";
             summaryMsg.innerHTML = `Opciones analizadas y graficadas para ${amounts.length} monto(s), ${years.length} plazo(s) y ${rates.length} tasa(s).`;
         }
