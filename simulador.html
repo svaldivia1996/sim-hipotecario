@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador Hipotecario - Análisis Visual</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #27ae60;
+            --background-color: #f0f3f4;
+            --card-bg: #ffffff;
+            --text-color: #333333;
+            --interest-color: #c0392b;
+            --dividend-color: #2980b9;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            background-color: var(--card-bg);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+            max-width: 1200px;
+            width: 100%;
+        }
+        h1 { text-align: center; color: var(--primary-color); margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #7f8c8d; margin-bottom: 25px; font-size: 0.95em; }
+        .uf-indicator {
+            background-color: #d5f5e3; color: #145a32; padding: 10px; border-radius: 6px;
+            text-align: center; font-weight: bold; margin-bottom: 20px; border: 1px solid #abebc6;
+        }
+        .form-row { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; }
+        .form-group { flex: 1; min-width: 250px; }
+        label { display: block; font-weight: 600; margin-bottom: 6px; color: var(--primary-color); }
+        input[type="text"], input[type="number"], select {
+            width: 100%; padding: 12px; border: 1px solid #bdc3c7; border-radius: 6px; box-sizing: border-box; font-size: 16px;
+        }
+        .help-text { font-size: 0.85em; color: #7f8c8d; margin-top: 4px; }
+        button {
+            width: 100%; padding: 14px; background-color: var(--secondary-color); color: white;
+            border: none; border-radius: 6px; font-size: 18px; font-weight: bold; cursor: pointer;
+            margin-top: 15px; transition: background-color 0.3s;
+        }
+        button:hover { background-color: #1e8449; }
+        
+        /* Contenedores Dinámicos de Gráficos */
+        #dynamic-charts-container { margin-top: 30px; }
+        .amount-section {
+            background: #fafbfc; border: 1px solid #e1e4e8; border-radius: 8px;
+            padding: 20px; margin-bottom: 30px;
+        }
+        .amount-title {
+            color: var(--primary-color); border-bottom: 2px solid var(--secondary-color);
+            padding-bottom: 10px; margin-bottom: 20px;
+        }
+        .charts-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px;
+        }
+        .chart-box { background: white; padding: 15px; border-radius: 8px; border: 1px solid #ecf0f1; }
+        
+        /* Tabla */
+        .results-section { margin-top: 35px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9em; }
+        th, td { padding: 12px; text-align: right; border-bottom: 1px solid #ecf0f1; }
+        th { background-color: var(--primary-color); color: white; font-weight: 600; position: sticky; top: 0; }
+        th:first-child, td:first-child { text-align: left; }
+        tr:hover { background-color: #f1f2f6; }
+        .highlight-interest { color: var(--interest-color); font-weight: bold; }
+        .error { color: var(--interest-color); font-weight: bold; text-align: center; margin-top: 15px; }
+        .summary { margin-top: 10px; font-weight: bold; color: var(--primary-color); text-align: center; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Simulador Hipotecario</h1>
+        <div class="subtitle">Análisis visual independiente por cada monto solicitado</div>
+        
+        <div class="uf-indicator" id="uf-status">Cargando valor de la UF de hoy...</div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="currency">Moneda de Ingreso:</label>
+                <select id="currency">
+                    <option value="UF">Unidad de Fomento (UF)</option>
+                    <option value="CLP">Pesos Chilenos (CLP)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="uf-manual">Valor UF (CLF) a usar:</label>
+                <input type="number" id="uf-manual" step="any">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="amounts">Montos a Solicitar:</label>
+                <input type="text" id="amounts" placeholder="Ej: 2000, 3000, 4000">
+            </div>
+            <div class="form-group">
+                <label for="years">Plazos en Años:</label>
+                <input type="text" id="years" placeholder="Ej: 15-30:5 (genera 15,20,25,30)">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="rates">Tasas de Interés Anual (%):</label>
+            <input type="text" id="rates" placeholder="Ej: 3.5, 4.0, 4.5">
+        </div>
+
+        <button onclick="calculateMortgage()">Analizar y Graficar Opciones</button>
+        <div id="error-msg" class="error"></div>
+        <div id="summary-msg" class="summary"></div>
+
+        <div id="dynamic-charts-container"></div>
+
+        <div class="results-section" id="results-container" style="display: none;">
+            <div id="table-wrapper"></div>
+        </div>
+    </div>
+
+    <script>
+        // Array de colores para las distintas tasas de interés
+        const chartColors = ['#2980b9', '#c0392b', '#27ae60', '#f39c12', '#8e44ad', '#16a085', '#d35400', '#2c3e50'];
+        window.chartInstances = []; // Guardar instancias para destruirlas al recalcular
+
+        window.onload = async function() {
+            const ufStatus = document.getElementById('uf-status');
+            const ufInput = document.getElementById('uf-manual');
+            try {
+                const response = await fetch('https://mindicador.cl/api/uf');
+                const data = await response.json();
+                const ufToday = data.serie[0].valor;
+                ufInput.value = ufToday;
+                ufStatus.innerHTML = `✅ Valor UF hoy: <strong>$${ufToday.toLocaleString('es-CL')}</strong>`;
+            } catch (error) {
+                ufStatus.innerHTML = `⚠️ Error al cargar la API. Ingresa la UF manualmente.`;
+            }
+        };
+
+        function parseRanges(inputStr) {
+            if (!inputStr) return [];
+            let parts = inputStr.split(',');
+            let resultSet = new Set();
+            
+            parts.forEach(part => {
+                part = part.trim().toLowerCase();
+                let rangeMatch = part.match(/^([\d\.]+)\s*-\s*([\d\.]+)(?:\s*(?:step|:)\s*([\d\.]+))?$/);
+                if (rangeMatch) {
+                    let start = parseFloat(rangeMatch[1]), end = parseFloat(rangeMatch[2]), step = rangeMatch[3] ? parseFloat(rangeMatch[3]) : 1;
+                    if (step > 0 && start <= end) {
+                        for (let val = start, s = 0; val <= end + (step/1000) && s < 1000; val += step, s++) {
+                            resultSet.add(parseFloat(val.toFixed(5)));
+                        }
+                    }
+                } else {
+                    let val = parseFloat(part);
+                    if (!isNaN(val)) resultSet.add(val);
+                }
+            });
+            return Array.from(resultSet).sort((a, b) => a - b);
+        }
+
+        // Formateador estándar para tooltips
+        const clpFormatter = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 });
+
+        function createChart(ctx, title, labels, datasets, yAxisTitle) {
+            return new Chart(ctx, {
+                type: 'line',
+                data: { labels: labels, datasets: datasets },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: { display: true, text: title, font: { size: 16 } },
+                        tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${clpFormatter.format(ctx.parsed.y)}` } }
+                    },
+                    scales: {
+                        y: { title: { display: true, text: yAxisTitle } },
+                        x: { title: { display: true, text: 'Plazo en Años' } }
+                    },
+                    interaction: { mode: 'index', intersect: false }
+                }
+            });
+        }
+
+        function calculateMortgage() {
+            const currency = document.getElementById('currency').value;
+            const ufValue = parseFloat(document.getElementById('uf-manual').value);
+            const amounts = parseRanges(document.getElementById('amounts').value);
+            const years = parseRanges(document.getElementById('years').value);
+            const rates = parseRanges(document.getElementById('rates').value);
+            
+            const errorMsg = document.getElementById('error-msg');
+            const summaryMsg = document.getElementById('summary-msg');
+            const chartsContainer = document.getElementById('dynamic-charts-container');
+            const resultsContainer = document.getElementById('results-container');
+            const tableWrapper = document.getElementById('table-wrapper');
+
+            // Limpiar UI
+            errorMsg.innerHTML = ""; summaryMsg.innerHTML = ""; resultsContainer.style.display = "none";
+            chartsContainer.innerHTML = "";
+            window.chartInstances.forEach(c => c.destroy());
+            window.chartInstances = [];
+
+            if (isNaN(ufValue) || ufValue <= 0 || amounts.length === 0 || years.length === 0 || rates.length === 0) {
+                errorMsg.innerHTML = "Por favor, ingresa valores válidos en todos los campos.";
+                return;
+            }
+
+            if (amounts.length * years.length * rates.length > 2000) {
+                errorMsg.innerHTML = `Límite superado. Por favor reduce los rangos.`;
+                return;
+            }
+
+            const formatCLP = (val) => '$' + Math.round(val).toLocaleString('es-CL');
+            const formatOrig = (val) => currency === 'UF' ? val.toLocaleString('es-CL') + ' UF' : formatCLP(val);
+
+            let tableHtml = `<table><thead><tr>
+                <th>Monto Solicitado</th><th>Plazo</th><th>Tasa Anual</th>
+                <th style="color:var(--dividend-color);">Dividendo Mensual (CLP)</th>
+                <th>Total Pagado (CLP)</th><th class="highlight-interest">Interés Pagado (CLP)</th>
+            </tr></thead><tbody>`;
+
+            // Procesar datos y construir UI por cada Monto
+            amounts.forEach((amount, amountIndex) => {
+                let principalCLP = (currency === 'UF') ? (amount * ufValue) : amount;
+                
+                // Estructuras para los gráficos de este Monto
+                const chartLabels = years.map(y => `${y} años`);
+                const datasetsDividendos = [];
+                const datasetsIntereses = [];
+
+                rates.forEach((annualRate, rateIndex) => {
+                    const color = chartColors[rateIndex % chartColors.length];
+                    const monthlyRate = (annualRate / 100) / 12;
+                    
+                    let dividendosData = [];
+                    let interesesData = [];
+
+                    years.forEach(year => {
+                        const totalMonths = year * 12;
+                        let monthlyPaymentCalc = (monthlyRate === 0) ? (amount / totalMonths) : 
+                            (amount * (monthlyRate * Math.pow(1 + monthlyRate, totalMonths)) / (Math.pow(1 + monthlyRate, totalMonths) - 1));
+                        
+                        let monthlyPaymentCLP = (currency === 'UF') ? (monthlyPaymentCalc * ufValue) : monthlyPaymentCalc;
+                        let totalInterestCLP = (monthlyPaymentCLP * totalMonths) - principalCLP;
+
+                        dividendosData.push(monthlyPaymentCLP);
+                        interesesData.push(totalInterestCLP);
+
+                        // Agregar a la tabla general
+                        tableHtml += `<tr>
+                            <td><strong>${formatOrig(amount)}</strong></td><td>${year} años</td><td>${annualRate.toFixed(2)}%</td>
+                            <td><strong>${formatCLP(monthlyPaymentCLP)}</strong></td><td>${formatCLP(monthlyPaymentCLP * totalMonths)}</td>
+                            <td class="highlight-interest">${formatCLP(totalInterestCLP)}</td>
+                        </tr>`;
+                    });
+
+                    datasetsDividendos.push({
+                        label: `Tasa ${annualRate.toFixed(2)}%`, data: dividendosData, 
+                        borderColor: color, backgroundColor: color, tension: 0.2
+                    });
+                    
+                    datasetsIntereses.push({
+                        label: `Tasa ${annualRate.toFixed(2)}%`, data: interesesData, 
+                        borderColor: color, backgroundColor: color, tension: 0.2, borderDash: [5, 5]
+                    });
+                });
+
+                // Inyectar HTML para los gráficos de este monto
+                const amountSectionId = `amount-sec-${amountIndex}`;
+                chartsContainer.insertAdjacentHTML('beforeend', `
+                    <div class="amount-section">
+                        <h2 class="amount-title">Análisis para ${formatOrig(amount)}</h2>
+                        <div class="charts-grid">
+                            <div class="chart-box"><canvas id="chart-div-${amountIndex}"></canvas></div>
+                            <div class="chart-box"><canvas id="chart-int-${amountIndex}"></canvas></div>
+                        </div>
+                    </div>
+                `);
+
+                // Renderizar los gráficos y guardar instancias
+                const ctxDiv = document.getElementById(`chart-div-${amountIndex}`).getContext('2d');
+                const ctxInt = document.getElementById(`chart-int-${amountIndex}`).getContext('2d');
+                
+                window.chartInstances.push(createChart(ctxDiv, 'Evolución del Dividendo Mensual', chartLabels, datasetsDividendos, 'Monto Mensual (CLP)'));
+                window.chartInstances.push(createChart(ctxInt, 'Evolución del Interés Total Pagado', chartLabels, datasetsIntereses, 'Interés Acumulado (CLP)'));
+            });
+
+            tableHtml += `</tbody></table>`;
+            tableWrapper.innerHTML = tableHtml;
+            resultsContainer.style.display = "block";
+            summaryMsg.innerHTML = `Opciones analizadas y graficadas para ${amounts.length} monto(s), ${years.length} plazo(s) y ${rates.length} tasa(s).`;
+        }
+    </script>
+</body>
+</html>
