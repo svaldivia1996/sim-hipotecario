@@ -124,6 +124,25 @@
         <div id="dynamic-charts-container"></div>
 
         <div class="results-section" id="results-container" style="display: none;">
+            <!-- Filtros de la tabla -->
+            <div id="table-filters" class="form-row" style="background: #eef2f3; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <div class="form-group" style="min-width: 150px;">
+                   <label for="filter-amount">Filtrar Monto:</label>
+                   <select id="filter-amount" onchange="runFilter()"><option value="all">Todos</option></select> 
+                </div>
+                <div class="form-group" style="min-width: 150px;">
+                   <label for="filter-year">Filtrar Plazo:</label>
+                   <select id="filter-year" onchange="runFilter()"><option value="all">Todos</option></select> 
+                </div>
+                <div class="form-group" style="min-width: 150px;">
+                   <label for="filter-rate">Filtrar Tasa:</label>
+                   <select id="filter-rate" onchange="runFilter()"><option value="all">Todos</option></select> 
+                </div>
+                 <div class="form-group" style="min-width: 150px; display: flex; align-items: flex-end;">
+                   <button onclick="resetFilters()" style="margin: 0; padding: 10px; font-size: 14px; background-color: #7f8c8d;">Limpiar Filtros</button>
+                </div>
+            </div>
+
             <div id="table-wrapper"></div>
             <div id="pagination-wrapper" style="margin-top: 15px; display: flex; justify-content: center; gap: 10px;"></div>
         </div>
@@ -175,9 +194,49 @@
         const clpFormatter = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 });
 
         let allTableData = [];
+        let filteredData = [];
         let currentPage = 1;
-        const itemsPerPage = 15;
+        const itemsPerPage = 10;
         let currentCurrency = 'UF'; 
+        
+        function populateFilters(amounts, years, rates) {
+            const fAmount = document.getElementById('filter-amount');
+            const fYear = document.getElementById('filter-year');
+            const fRate = document.getElementById('filter-rate');
+            
+            const formatCLP = (val) => '$' + Math.round(val).toLocaleString('es-CL');
+            const formatOrig = (val) => currentCurrency === 'UF' ? val.toLocaleString('es-CL') + ' UF' : formatCLP(val);
+
+            fAmount.innerHTML = '<option value="all">Todos</option>';
+            fYear.innerHTML = '<option value="all">Todos</option>';
+            fRate.innerHTML = '<option value="all">Todos</option>';
+
+            amounts.forEach(val => fAmount.innerHTML += `<option value="${val}">${formatOrig(val)}</option>`);
+            years.forEach(val => fYear.innerHTML += `<option value="${val}">${val} años</option>`);
+            rates.forEach(val => fRate.innerHTML += `<option value="${val}">${val.toFixed(2)}%</option>`);
+        }
+
+        function runFilter() {
+            const fAmountVal = document.getElementById('filter-amount').value;
+            const fYearVal = document.getElementById('filter-year').value;
+            const fRateVal = document.getElementById('filter-rate').value;
+
+            filteredData = allTableData.filter(row => {
+                const matchAmount = (fAmountVal === 'all') || (row.amount == parseFloat(fAmountVal));
+                const matchYear = (fYearVal === 'all') || (row.year == parseFloat(fYearVal));
+                const matchRate = (fRateVal === 'all') || (row.rate == parseFloat(fRateVal));
+                return matchAmount && matchYear && matchRate;
+            });
+
+            renderTable(1);
+        }
+
+        function resetFilters() {
+            document.getElementById('filter-amount').value = 'all';
+            document.getElementById('filter-year').value = 'all';
+            document.getElementById('filter-rate').value = 'all';
+            runFilter();
+        }
 
         function createChart(ctx, title, labels, datasets, yAxisTitle) {
             return new Chart(ctx, {
@@ -202,11 +261,18 @@
             currentPage = page;
             const start = (page - 1) * itemsPerPage;
             const end = start + itemsPerPage;
-            const pageData = allTableData.slice(start, end);
+            const pageData = filteredData.slice(start, end);
             const tableWrapper = document.getElementById('table-wrapper');
+            const paginationWrapper = document.getElementById('pagination-wrapper');
             
             const formatCLP = (val) => '$' + Math.round(val).toLocaleString('es-CL');
             const formatOrig = (val) => currentCurrency === 'UF' ? val.toLocaleString('es-CL') + ' UF' : formatCLP(val);
+
+            if (filteredData.length === 0) {
+                tableWrapper.innerHTML = `<div style="text-align:center; padding:20px; color:#c0392b;">No se encontraron resultados con los filtros actuales.</div>`;
+                paginationWrapper.innerHTML = '';
+                return;
+            }
 
             let tableHtml = `<table><thead><tr>
                 <th>Monto Solicitado</th><th>Plazo</th><th>Tasa Anual</th>
@@ -222,13 +288,21 @@
                 </tr>`;
             });
             
+            // Rellenar filas vacías para mantener la altura
+            const emptyRows = itemsPerPage - pageData.length;
+            if (emptyRows > 0) {
+                for (let i = 0; i < emptyRows; i++) {
+                    tableHtml += `<tr><td colspan="6" style="color: transparent; user-select: none;">&nbsp;</td></tr>`;
+                }
+            }
+            
             tableHtml += `</tbody></table>`;
             tableWrapper.innerHTML = tableHtml;
             renderPagination();
         }
 
         function renderPagination() {
-            const totalPages = Math.ceil(allTableData.length / itemsPerPage);
+            const totalPages = Math.ceil(filteredData.length / itemsPerPage);
             const paginationWrapper = document.getElementById('pagination-wrapper');
             if (totalPages <= 1) {
                 paginationWrapper.innerHTML = '';
@@ -298,11 +372,15 @@
             window.chartInstances.forEach(c => c.destroy());
             window.chartInstances = [];
             allTableData = []; // Reset global data
+            filteredData = []; // Reset filtered data
 
             if (isNaN(ufValue) || ufValue <= 0 || amounts.length === 0 || years.length === 0 || rates.length === 0) {
                 errorMsg.innerHTML = "Por favor, ingresa valores válidos en todos los campos.";
                 return;
             }
+
+            // Populate filters before processing logic loops
+            populateFilters(amounts, years, rates);
 
             if (amounts.length * years.length * rates.length > 2000) {
                 errorMsg.innerHTML = `Límite superado. Por favor reduce los rangos.`;
@@ -383,6 +461,8 @@
             });
 
             // Reemplazamos la construcción directa de la tabla por la llamada a renderTable
+            // Initialize filtered data and render
+            filteredData = [...allTableData];
             renderTable(1);
             resultsContainer.style.display = "block";
             summaryMsg.innerHTML = `Opciones analizadas y graficadas para ${amounts.length} monto(s), ${years.length} plazo(s) y ${rates.length} tasa(s).`;
